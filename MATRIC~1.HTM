@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrice Influenza-Interesse (Per Categoria)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carica la libreria D3.js per la visualizzazione dei dati -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* Impostazioni generali per il corpo e il font */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+            color: #1f2937;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        /* Stile specifico per il contenitore del grafico */
+        #chart-container {
+            background-color: white;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            max-width: 1000px;
+            width: 100%;
+        }
+        /* Stile per i tooltip (informazioni che appaiono al passaggio del mouse) */
+        .tooltip {
+            position: absolute;
+            text-align: left; /* Allineamento a sinistra per le info del tooltip */
+            padding: 8px;
+            font: 12px sans-serif;
+            background: #374151;
+            color: white;
+            border: 0px;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 10;
+            white-space: pre-wrap;
+            max-width: 280px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        /* Stile specifico per migliorare l'asse Y */
+        .y-axis .tick text {
+            font-weight: bold;
+            font-size: 10px; /* Ridotto leggermente per maggiore spazio */
+            text-anchor: end !important; /* Forza l'allineamento a destra */
+        }
+        /* Assicura che la legenda sia disposta su più colonne su desktop */
+        #legend {
+            column-count: 2;
+            column-gap: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            margin-top: 2rem;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            break-inside: avoid-column; /* Impedisce che un elemento della legenda venga diviso tra le colonne */
+        }
+        /* Stile per i pulsanti di esportazione */
+        .export-button {
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .export-button:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="chart-container">
+        <h1 class="text-3xl font-extrabold mb-4 text-center text-indigo-800">Matrice Influenza-Interesse (Stakeholder)</h1>
+        <p class="text-center text-sm mb-6 text-gray-600">Posizionamento degli stakeholder in base al Livello di Influenza (Asse Y) e Livello di Interesse (Asse X). Il colore indica la **Categoria** di appartenenza.</p>
+        
+        <div id="influence-interest-chart"></div>
+        
+        <!-- Blocco per i pulsanti di esportazione -->
+        <div class="flex justify-center space-x-4 mt-6">
+            <button id="export-png" class="export-button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 mr-2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0-4.5-4.5M12 16.5V3" />
+                </svg>
+                Esporta come PNG
+            </button>
+            <button id="export-svg" class="export-button bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 mr-2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                Esporta come SVG
+            </button>
+        </div>
+
+        <div id="legend" class="text-sm font-medium">
+            <!-- La legenda verrà popolata dal codice D3 -->
+        </div>
+    </div>
+    
+    <!-- Carica la libreria html2canvas per l'esportazione PNG -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <script type="module">
+        // Dati grezzi estratti dal file CSV
+        const rawData = [
+            {"Stakeholder / Progetto": "Agenzia delle Entrate", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Budano Francesco", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Cella Maria Grazia", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Ciuffreda Matteo", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "De Martino Aniello", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Del Conte Domenico", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Guerra Santo", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Iaconeta Gianluca", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "La Macchia Nicola", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Maratea Giuseppe", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Pomponio Tiziana", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Quitadamo Giovanni", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Procura Foggia", "Livello Influenza": 3, "Livello Interesse": 1, "Azione strategica": "Monitorare in chiave strategica", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "ANCE Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Camera di Commercio Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Città Metropolitana di Bari", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Andria", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Lucera", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Mattinata", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Confindustria Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Corte dei Conti", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Forestale-Carabinieri-Stazioni", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Guardi di Finanza", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Imprese e società strategiche", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Presidenza del Consiglio dei Ministri - DIPAS", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Prefettura Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Questura Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "R.S.P.P.", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "S.P.P.", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Sportello Unico Attività Produttive (SUAP)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Tribunale", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Ufficio Servizi Sociali", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Adiconsum", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Agrinsieme", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "A.I.I.G. – Associazione Italiana Insegnanti di Geografia – Sezione di Foggia", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni e cooperative territoriali strutturate"},
+            {"Stakeholder / Progetto": "ANAS S.p.A.", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "ARIF (Agenzia Regionale Attività Irrigue e Forestali)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Associazioni e cooperative territoriali strutturate", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni e cooperative territoriali strutturate"},
+            {"Stakeholder / Progetto": "Associazioni economiche e culturali regionali", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Autorità di Gestione Parchi", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "C.N.R. (Consiglio Nazionale delle Ricerche)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Coldiretti", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Comune Di Cagnano Varano", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Carpino", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Ischitella", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Lesina", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Monte Sant'Angelo", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Peschici", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Rignano Garganico", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di San Giovanni Rotondo", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di San Marco in Lamis", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune Di San Nicandro Garganico", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Serracapriola", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Vico del Gargano", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Vieste", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Ente Parco Nazionale del Gargano", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "GAL Daunofantino", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "GAL Gargano", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Ministero dell’Ambiente e della Sicurezza Energetica – MASE", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Provincia di Foggia", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "\"Unione Europea - Progetti esterni (LIFE, Interreg, PNRR)\"", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Reparto Carabinieri Biodiversità Foresta Umbra", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Università degli Studi di Foggia", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Università di Bari", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Università di Bologna", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Università di Camerino", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Università di Firenze", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Università di Roma", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "VIVAIO di Statte (TA)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Associazioni culturale, sportiva e civiche minori", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Associazioni culturali, sportive e civiche minori"},
+            {"Stakeholder / Progetto": "Associazioni e cooperative territoriali strutturate", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Associazioni e cooperative territoriali strutturate"},
+            {"Stakeholder / Progetto": "Comune di Apricena", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Manfredonia", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Associazioni e cooperative territoriali strutturate", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni e cooperative territoriali strutturate"},
+            {"Stakeholder / Progetto": "Associazioni economiche e culturali regionali", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confcommercio", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confesercenti", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confimi Industria", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Enti tecnici e scientifici", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Fornitori tecnici e operatori economici locali", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Fornitori tecnici e operatori economici locali"},
+            {"Stakeholder / Progetto": "Imprese e società strategiche", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Legambiente", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Operatori di servizi generali e manutenzione", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Operatori di servizi generali e manutenzione"},
+            {"Stakeholder / Progetto": "Professionisti individuali e micro-fornitori", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "WWF", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Coldiretti", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Comune di Apricena", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Manfredonia", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "FAI", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Federalberghi", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Federparchi", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Guardie Ecologiche Volontarie", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Legacoop", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Oasi Lago Salso S.p.A.", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Turing Club Italiano", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "UNESCO", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Confartigianato", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confederazione Italiana Agricoltori (CIA)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confederazione Nazionale Artigiani (CNA)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Libera", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Sistema della Protezione Civile", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Consorzi/Associazioni di Categoria", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Corpo Forestale dello Stato (Carabinieri Forestali)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Assessorato Ambiente", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Assessorato Agricoltura", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Assessorato Turismo", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Ufficio Parchi", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Ufficio Foreste", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Sezione Tutela del Territorio", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Cittadini/Comunità Locali", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Media/Stampa Locale e Regionale", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Scuole/Università (Non partner specifici)", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Visitatori/Turisti", "Livello Influenza": 1, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Altre Istituzioni Pubbliche (es. ASL)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Altre Associazioni Generali (es. Croce Rossa)", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Altre Imprese e P.IVA non strategiche", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Media/Stampa Nazionale/Internazionale", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Comuni della Capitanata (non Parco)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Confederazioni Sindacali (CGIL, CISL, UIL)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Altri Enti di ricerca/universitari (Non partner specifici)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Consorzio Bonifica", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Protezione Civile Regionale", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Servizi AIB (Antincendio Boschivo)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Associazioni Ambientaliste Nazionali (es. LIPU)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Associazioni Categoria (Altre)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Soprintendenza Archeologia Belle Arti e Paesaggio (ABAP)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Agenzia del Demanio", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Prefettura BAT (Barletta-Andria-Trani)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "ASL Foggia", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Acquedotto Pugliese (AQP)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Enel", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "TIM", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Telefonia Mobile (Altro)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Terna", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "RFI (Rete Ferroviaria Italiana)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Ferrovie del Gargano", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Capitaneria di Porto", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Associazioni di Pesca", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Cooperative/Consorzi di Pesca", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Ministero delle Infrastrutture e Trasporti (MIT)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Ministero dell'Agricoltura, Sovranità Alimentare e Foreste (MASAF)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Regione Puglia - Assessorato Trasporti", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Autorità di Sistema Portuale del Mare Adriatico Meridionale (AdSP)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Ufficio Circondariale Marittimo", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Corpo Forestale dello Stato (Carabinieri Forestali) - Nucleo Ispettorato del Lavoro (NIL)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Guardia Costiera", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "ENAC (Ente Nazionale per l'Aviazione Civile)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Aeroporti di Puglia", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Azienda Ospedaliera Ospedali Riuniti Foggia", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Vigili del Fuoco", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Altre Forze dell'Ordine (es. Polizia Provinciale)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Consorzio Asi Foggia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Confcooperative", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "UNAPROA", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "UNIONE PROVINCIALE AGRICOLTORI FOGGIA", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Altre Organizzazioni Sindacali", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "ANCE Regionale Puglia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Associazioni Agricole (Altre)", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Consorzi/Associazioni Turistiche", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Associazioni di Volontariato (es. Protezione Civile volontaria locale)", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Altre ONG/ETS/Associazioni Nazionali", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Imprese Turistiche/Albergatori (individuali)", "Livello Influenza": 1, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Aziende Agricole (Individuali/P.IVA)", "Livello Influenza": 1, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Cacciatori", "Livello Influenza": 1, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Pescatori (non organizzati)", "Livello Influenza": 1, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Agenzia Regionale per la Prevenzione e Protezione Ambientale (ARPA)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "ISPRA (Istituto Superiore per la Protezione e la Ricerca Ambientale)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "ENEA (Agenzia nazionale per le nuove tecnologie, l'energia e lo sviluppo economico sostenibile)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Istituti Scolastici Superiori (Dirigenti/Insegnanti)", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Istituti Scolastici Primari/Secondari I grado", "Livello Influenza": 1, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Comunità Scientifiche e Accademiche (in generale)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Ordine degli Architetti/Ingegneri/Geologi/Agronomi", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Professionisti/Studi Tecnici (individuali P.IVA)", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Imprese Edili/Costruzioni (locali non strategiche)", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Fornitori tecnici e operatori economici locali"},
+            {"Stakeholder / Progetto": "Associazioni Venatorie/di Caccia (Legali)", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Federazione Italiana Parchi e Riserve Naturali (Federparchi)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Europarc Federation", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Organizzazioni Internazionali (es. UNEP, FAO)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Altri Enti/Agenzie Regionali (es. Puglia Sviluppo)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Organizzazioni Turistiche Nazionali (es. ENIT)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Consorzi/Associazioni Produttori Locali (es. Olio, Vino)", "Livello Influenza": 3, "Livello Interesse": 3, "Azione strategica": "Gestire da vicino", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Giacche Verdi", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Coinvolgere attivamente", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Altre Confessioni Religiose/Enti Morali", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Comune di Apricena", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Manfredonia", "Livello Influenza": 2, "Livello Interesse": 3, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Apricena", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Manfredonia", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Apricena", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Comune di Manfredonia", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Autofficina Ciuffreda Pio Michele", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Comuni della Capitanata (non Parco)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti di governance e pianificazione"},
+            {"Stakeholder / Progetto": "Confartigianato", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confederazione Italiana Agricoltori (CIA)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confederazione Nazionale Artigiani (CNA)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confcooperative", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "UNIONE PROVINCIALE AGRICOLTORI FOGGIA", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Consorzi/Associazioni Produttori Locali (es. Olio, Vino)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Cooperative/Consorzi di Pesca", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Ordine degli Architetti/Ingegneri/Geologi/Agronomi", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Confederazioni Sindacali (CGIL, CISL, UIL)", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "ANCE Regionale Puglia", "Livello Influenza": 3, "Livello Interesse": 2, "Azione strategica": "Mantenere soddisfatti", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Altre Organizzazioni Sindacali", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Associazioni Agricole (Altre)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Consorzi/Associazioni Turistiche", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Associazioni di Pesca", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni economiche e culturali regionali"},
+            {"Stakeholder / Progetto": "Associazioni Venatorie/di Caccia (Legali)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Imprese Turistiche/Albergatori (individuali)", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Aziende Agricole (Individuali/P.IVA)", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Altre Imprese e P.IVA non strategiche", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Imprese e società strategiche"},
+            {"Stakeholder / Progetto": "Fornitori tecnici e operatori economici locali (non strategici)", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Fornitori tecnici e operatori economici locali"},
+            {"Stakeholder / Progetto": "Imprese Edili/Costruzioni (locali non strategiche)", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Fornitori tecnici e operatori economici locali"},
+            {"Stakeholder / Progetto": "Professionisti/Studi Tecnici (individuali P.IVA)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Professionisti/Studi Tecnici (individuali P.IVA)", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Professionisti individuali e micro-fornitori"},
+            {"Stakeholder / Progetto": "Altre Associazioni Generali (es. Croce Rossa)", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Associazioni di Volontariato (es. Protezione Civile volontaria locale)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Altre ONG/ETS/Associazioni Nazionali", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Giacche Verdi", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Associazioni generale"},
+            {"Stakeholder / Progetto": "Pescatori (non organizzati)", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Cacciatori", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Altre Confessioni Religiose/Enti Morali", "Livello Influenza": 1, "Livello Interesse": 1, "Azione strategica": "Monitorare", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Media/Stampa Locale e Regionale", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Visitatori/Turisti", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Altro"},
+            {"Stakeholder / Progetto": "Comunità Scientifiche e Accademiche (in generale)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Scuole/Università (Non partner specifici)", "Livello Influenza": 2, "Livello Interesse": 2, "Azione strategica": "Mantenere informati", "Categoria": "Enti tecnici e scientifici"},
+            {"Stakeholder / Progetto": "Istituti Scolastici Primari/Secondari I grado", "Livello Influenza": 1, "Livello Interesse": 2, "Azione strategica": "Monitorare e sensibilizzare", "Categoria": "Enti tecnici e scientifici"}
+            // Aggiungere qui altri dati se necessario
+        ];
+
+        // 1. Rimuoviamo la colorMap precedente
+        // 2. Creiamo una lista unica di categorie
+        const uniqueCategories = [...new Set(rawData.map(d => d.Categoria))].sort();
+
+        // Palette di colori vibranti per le categorie (D3 scale category 10 o simile)
+        const categoryColorScale = d3.scaleOrdinal(d3.schemeCategory10)
+            .domain(uniqueCategories);
+
+        // Funzione di utility per raggruppare i dati per categoria Influenza-Interesse (come prima)
+        function jitterData(data) {
+            const counts = {};
+            return data.map(d => {
+                const key = `${d["Livello Influenza"]}-${d["Livello Interesse"]}`;
+                if (!counts[key]) {
+                    counts[key] = { count: 0, points: [] };
+                }
+
+                // Genera un piccolo offset casuale (jitter)
+                const jitter = (Math.random() - 0.5) * 0.5; // tra -0.25 e 0.25
+                const jitterY = (Math.random() - 0.5) * 0.5; // tra -0.25 e 0.25
+
+                const jitteredPoint = {
+                    ...d,
+                    xPos: d["Livello Interesse"] + jitter,
+                    yPos: d["Livello Influenza"] + jitterY,
+                };
+                counts[key].points.push(jitteredPoint);
+                counts[key].count++;
+
+                return jitteredPoint;
+            });
+        }
+
+        const data = jitterData(rawData);
+
+        // Configurazione del grafico
+        // *** MODIFICA QUI: Aumento del margine sinistro per l'asse Y ***
+        const margin = { top: 30, right: 30, bottom: 60, left: 140 }; // Aumentato da 60 a 140
+        const width = 800 - margin.left - margin.right;
+        const height = 500 - margin.top - margin.bottom;
+
+        // Rimuove l'SVG precedente se presente
+        d3.select("#influence-interest-chart svg").remove();
+
+        // Crea il contenitore SVG
+        const svg = d3.select("#influence-interest-chart")
+            .append("svg")
+            .attr("id", "stakeholder-svg") // ID aggiunto per il riferimento per l'esportazione
+            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+            .attr("preserveAspectRatio", "xMinYMin meet")
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Scala X: Livello Interesse (1, 2, 3)
+        const x = d3.scaleLinear()
+            .domain([0.5, 3.5]) 
+            .range([0, width]);
+
+        // Scala Y: Livello Influenza (1, 2, 3) - invertita
+        const y = d3.scaleLinear()
+            .domain([0.5, 3.5]) 
+            .range([height, 0]);
+
+        // Asse X - Interesse
+        const xAxis = d3.axisBottom(x)
+            .tickValues([1, 2, 3])
+            .tickFormat(d => {
+                if (d === 3) return "Alto Interesse";
+                if (d === 2) return "Medio Interesse";
+                if (d === 1) return "Basso Interesse";
+                return "";
+            });
+
+        svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(xAxis)
+            .attr("class", "text-gray-700")
+            .call(g => g.select(".domain").remove())
+            .call(g => g.selectAll(".tick line").remove());
+
+        // Etichetta Asse X
+        svg.append("text")
+            .attr("class", "x label text-sm font-semibold")
+            .attr("text-anchor", "middle")
+            .attr("x", width / 2)
+            .attr("y", height + margin.bottom - 10)
+            .text("Livello Interesse (Basso → Alto)")
+            .attr("fill", "#1f2937");
+
+
+        // Asse Y - Influenza
+        const yAxis = d3.axisLeft(y)
+            .tickValues([1, 2, 3])
+            .tickFormat(d => {
+                if (d === 3) return "Alta Influenza (3)";
+                if (d === 2) return "Media Influenza (2)";
+                if (d === 1) return "Bassa Influenza (1)";
+                return "";
+            });
+
+        svg.append("g")
+            .call(yAxis)
+            // *** MODIFICA QUI: Sposta il testo dell'asse Y più lontano dall'asse, usando l'opzione .tickPadding ***
+            .call(yAxis.tickPadding(10)) 
+            .attr("class", "y-axis text-gray-700")
+            .call(g => g.select(".domain").remove())
+            .call(g => g.selectAll(".tick line").remove());
+
+        // Etichetta Asse Y
+        // *** MODIFICA QUI: Sposta l'etichetta del titolo dell'asse Y più a sinistra ***
+        svg.append("text")
+            .attr("class", "y label text-sm font-semibold")
+            .attr("text-anchor", "middle")
+            .attr("y", -margin.left + 20) /* Spostato più a sinistra */
+            .attr("x", -height / 2)
+            .attr("transform", "rotate(-90)")
+            .text("Livello Influenza (Bassa → Alta)")
+            .attr("fill", "#1f2937");
+
+        // Disegna i Quadranti della Matrice (Linee di separazione)
+        const dividerValues = [1.5, 2.5];
+
+        // Linee verticali
+        svg.selectAll(".x-divider")
+            .data(dividerValues)
+            .enter().append("line")
+            .attr("class", "x-divider")
+            .attr("x1", d => x(d))
+            .attr("x2", d => x(d))
+            .attr("y1", 0)
+            .attr("y2", height)
+            .attr("stroke", "#D1D5DB")
+            .attr("stroke-dasharray", "4");
+
+        // Linee orizzontali
+        svg.selectAll(".y-divider")
+            .data(dividerValues)
+            .enter().append("line")
+            .attr("class", "y-divider")
+            .attr("x1", 0)
+            .attr("x2", width)
+            .attr("y1", d => y(d))
+            .attr("y2", d => y(d))
+            .attr("stroke", "#D1D5DB")
+            .attr("stroke-dasharray", "4");
+
+        // Tooltip (casella informativa al passaggio del mouse)
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+        // Disegna i punti
+        svg.selectAll("circle")
+            .data(data)
+            .enter().append("circle")
+            .attr("cx", d => x(d.xPos))
+            .attr("cy", d => y(d.yPos))
+            .attr("r", 7) // Raggio del punto
+            // Usa la nuova scala colori basata sulla Categoria
+            .attr("fill", d => categoryColorScale(d["Categoria"]))
+            .attr("stroke", "#ffffff")
+            .attr("stroke-width", 2)
+            .attr("opacity", 0.9)
+            .attr("class", "cursor-pointer transition duration-150 ease-in-out hover:scale-125")
+            .on("mouseover", (event, d) => {
+                tooltip.transition()
+                    .duration(200)
+                    .style("opacity", .95);
+                tooltip.html(`
+                    <span class="font-bold text-yellow-300">${d["Stakeholder / Progetto"]}</span><br/>
+                    <span class="text-xs text-gray-400">Azione consigliata: ${d["Azione strategica"]}</span><br/>
+                    <hr class="my-1 border-gray-600"/>
+                    <span class="font-bold text-indigo-300">Categoria: ${d["Categoria"]}</span><br/>
+                    Influenza: ${d["Livello Influenza"]}<br/>
+                    Interesse: ${d["Livello Interesse"]}
+                `)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            })
+            .on("mouseout", (d) => {
+                tooltip.transition()
+                    .duration(500)
+                    .style("opacity", 0);
+            });
+
+        // Crea la Legenda basata sulle Categorie
+        const legendContainer = d3.select("#legend");
+        legendContainer.html(''); // Pulisce la legenda precedente
+
+        uniqueCategories.forEach(category => {
+            const colorValue = categoryColorScale(category);
+            const item = legendContainer.append("div")
+                .attr("class", "legend-item p-1 rounded-lg");
+
+            item.append("span")
+                .attr("class", "inline-block w-3 h-3 rounded-full mr-2")
+                .style("background-color", colorValue);
+
+            item.append("span")
+                .text(category)
+                .attr("class", "text-gray-700 text-xs");
+        });
+
+        // Etichette dei quadranti (come prima)
+        const quadrantLabels = [
+            // Alto Interesse (3), Alta Influenza (3) -> Gestire da vicino (Key Players)
+            { x: 3, y: 3, text: "Gestire da vicino", description: "(Key Players)", color: "#10B981" },
+            // Basso Interesse (1), Alta Influenza (3) -> Mantenere soddisfatti (Keep Satisfied)
+            { x: 1, y: 3, text: "Mantenere soddisfatti", description: "(High Power/Low Interest)", color: "#F59E0B" },
+            // Alto Interesse (3), Bassa Influenza (1) -> Coinvolgere attivamente (Keep Informed/Involve)
+            { x: 3, y: 1, text: "Coinvolgere attivamente", description: "(Low Power/High Interest)", color: "#3B82F6" },
+            // Basso Interesse (1), Bassa Influenza (1) -> Monitorare (Monitor)
+            { x: 1, y: 1, text: "Monitorare", description: "(Minimum Effort)", color: "#E5E7EB" },
+            // Quadrante Medio
+            { x: 2, y: 2, text: "Mantenere informati", description: "(Medium Importance)", color: "#60A5FA" },
+        ];
+
+        // Aggiungi le etichette di background per i quadranti principali (utilizzando l'azione strategica come riferimento)
+        svg.selectAll(".quadrant-label")
+            .data(quadrantLabels)
+            .enter().append("text")
+            .attr("class", "quadrant-label")
+            .attr("x", d => x(d.x) - (x(d.x) - x(d.x - 0.5)))
+            .attr("y", d => y(d.y) + (y(d.y - 0.5) - y(d.y)) * 0.4) // Posiziona più in alto
+            .attr("text-anchor", "middle")
+            .text(d => d.text)
+            .attr("fill", d => d3.color(d.color).darker(3))
+            .style("font-size", "12px") /* Riduci dimensione per evitare overflow */
+            .style("font-weight", "bold")
+            .style("pointer-events", "none");
+
+        // Aggiungi la descrizione sotto l'etichetta principale
+        svg.selectAll(".quadrant-description")
+            .data(quadrantLabels)
+            .enter().append("text")
+            .attr("class", "quadrant-description")
+            .attr("x", d => x(d.x) - (x(d.x) - x(d.x - 0.5)))
+            .attr("y", d => y(d.y) + (y(d.y - 0.5) - y(d.y)) * 0.7) // Posiziona sotto l'etichetta
+            .attr("text-anchor", "middle")
+            .text(d => d.description)
+            .attr("fill", d => d3.color(d.color).darker(2))
+            .style("font-size", "9px") /* Riduci dimensione per evitare overflow */
+            .style("font-style", "italic")
+            .style("pointer-events", "none");
+            
+        // --- FUNZIONALITÀ DI ESPORTAZIONE ---
+
+        /**
+         * Funzione per scaricare il contenuto come file.
+         * @param {string} dataUrl - Il contenuto del file come Data URL (base64).
+         * @param {string} filename - Il nome del file.
+         */
+        function downloadFile(dataUrl, filename) {
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        /**
+         * Esporta l'SVG come file SVG.
+         */
+        document.getElementById('export-svg').addEventListener('click', () => {
+            const svgElement = document.getElementById('stakeholder-svg');
+            if (!svgElement) return console.error("SVG element not found for export.");
+
+            // Serializza l'SVG e aggiunge gli stili CSS inline essenziali
+            const serializer = new XMLSerializer();
+            let source = serializer.serializeToString(svgElement);
+            
+            // Aggiunge la dichiarazione XML e il DOCTYPE (opzionale ma consigliato)
+            source = '<?xml version="1.0" standalone="no"?>\r\n' + source;
+            
+            // Crea un Data URL SVG
+            const svgDataUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source);
+            downloadFile(svgDataUrl, 'matrice_influenza_interesse.svg');
+        });
+
+        /**
+         * Esporta l'intera area del contenitore come immagine PNG.
+         */
+        document.getElementById('export-png').addEventListener('click', () => {
+            const chartContainer = document.getElementById('chart-container');
+            
+            // html2canvas richiede il contenitore esterno, non solo l'SVG
+            html2canvas(chartContainer, { 
+                scale: 2, // Aumenta la risoluzione per una migliore qualità
+                allowTaint: true,
+                useCORS: true,
+                backgroundColor: chartContainer.style.backgroundColor || '#ffffff'
+            }).then(canvas => {
+                const imgDataUrl = canvas.toDataURL("image/png");
+                downloadFile(imgDataUrl, 'matrice_influenza_interesse.png');
+            }).catch(err => {
+                 console.error("Errore nell'esportazione PNG:", err);
+            });
+        });
+    </script>
+</body>
+</html>
